@@ -141,7 +141,7 @@ func parse(response string, expectedStoreDataType string) (map[netip.Addr]int, e
 func validateHeader(response string, expectedTableName string) error {
 	lines := strings.Split(response, "\n")
 
-	if len(lines) == 0 {
+	if len(lines) < 2 {
 		return fmt.Errorf("Response is empty or malformed")
 	}
 
