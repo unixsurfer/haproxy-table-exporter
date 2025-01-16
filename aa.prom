@@ -1,0 +1,3 @@
+# HELP haproxy_stick_table Tracks the 'http_req_rate' per client IP address as observed by custom stick-table in HAProxy
+# TYPE haproxy_stick_table gauge
+haproxy_stick_table{client_ip="1.32.20.122",name="table_requests_limiter_src_ip",type="ip"} 1

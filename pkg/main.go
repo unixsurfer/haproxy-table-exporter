@@ -83,7 +83,6 @@ func parse(response string, expectedStoreDataType string) (map[netip.Addr]int, e
 	// The current regex only supports tables with a single increment rate data type.
 	// Matches a line in this format:
 	// 0x7fcf0c057200: key=127.0.0.1 use=0 exp=58330 shard=0 http_req_rate(60000)=3
-	exampleLine := lines[1]
 	e := regexp.MustCompile(
 		`^` +
 			`\s*0x[[:alnum:]]+: ` + // Match the entry start with a hexadecimal address
@@ -95,15 +94,6 @@ func parse(response string, expectedStoreDataType string) (map[netip.Addr]int, e
 			`(?P<storeType>[[:alnum:]_]+)` + // Match and capture the store type; 2nd group
 			`\([[:digit:]]+\)=(?P<rate>[[:digit:]]+)$`, // Match and capture the rate; 3rd group
 	)
-	m := e.FindStringSubmatch(exampleLine)
-
-	if len(m) != 4 {
-		return requests, fmt.Errorf("Failed to parse entries in the stick table")
-	}
-	storeType := m[2]
-	if storeType != expectedStoreDataType {
-		return requests, fmt.Errorf("Store type mismatch: expected '%s', but found '%s'", expectedStoreDataType, storeType)
-	}
 
 	for i := 0; i < len(lines); i++ {
 		m := e.FindStringSubmatch(lines[i])
@@ -116,6 +106,10 @@ func parse(response string, expectedStoreDataType string) (map[netip.Addr]int, e
 				}
 			}
 
+			storeType := groups["storeType"]
+			if storeType != expectedStoreDataType {
+				return nil, fmt.Errorf("Store type mismatch: expected '%s', but found '%s'", expectedStoreDataType, storeType)
+			}
 			ip, err := netip.ParseAddr(groups["ip"])
 			if err != nil {
 				return nil, fmt.Errorf("Failed to parse IP address: %v", err)
