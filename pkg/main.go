@@ -18,7 +18,6 @@ import (
 
 // Sends a command to HAProxy UNIX socket and returns the response
 func sendCommand(table string, socket string, storeType string, minRequestRate int, timeout time.Duration) (string, error) {
-	fmt.Println(timeout)
 	switch {
 	case storeType == "":
 		return "", fmt.Errorf("storeType argument cannot be empty")
@@ -47,7 +46,6 @@ func sendCommand(table string, socket string, storeType string, minRequestRate i
 		return "", err
 	}
 	cmd := fmt.Sprintf("show table %s data.%s gt %d\n", table, storeType, minRequestRate)
-	fmt.Println(cmd)
 	if _, err := conn.Write([]byte(cmd)); err != nil {
 		return "", fmt.Errorf("Failed to send command to socket: %v", err)
 	}
@@ -68,7 +66,6 @@ func sendCommand(table string, socket string, storeType string, minRequestRate i
 	r = strings.TrimSuffix(r, "\n")
 	r = strings.TrimSpace(r)
 
-	fmt.Print(r)
 	return r, nil
 }
 
