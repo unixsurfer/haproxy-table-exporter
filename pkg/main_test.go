@@ -1,14 +1,171 @@
 package exporter
 
 import (
+	"fmt"
+	"net"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
 
+func Test_sendCommand(t *testing.T) {
+	t.Parallel()
+	tmpDir, err := os.MkdirTemp("", "sendCommand-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+	socket := filepath.Join(tmpDir, "haproxy.sock")
+
+	tests := []struct {
+		name              string
+		table             string
+		storeType         string
+		minRequestRate    int
+		timeout           time.Duration
+		wantResult        string
+		wantErr           bool
+		connectionFailure bool
+		expectedErr       string
+	}{
+		{
+			name:           "valid input",
+			table:          "table_requests_limiter_src_ip",
+			storeType:      "http_req_rate",
+			minRequestRate: 1,
+			timeout:        1 * time.Second,
+			expectedErr:    "",
+			wantResult: "# table: table_requests_limiter_src_ip, type: ip, size:1048576, used:11597\n" +
+				"0x7f6d48298b70: key=1.32.20.122 use=0 exp=26834 shard=0 http_req_rate(60000)=1\n" +
+				"0x55e0d8f5cc20: key=1.39.115.67 use=0 exp=44496 shard=0 http_req_rate(60000)=2321",
+		},
+		{
+			name:              "connection failure",
+			table:             "table_requests_limiter_src_ip",
+			storeType:         "http_req_rate",
+			minRequestRate:    1,
+			timeout:           1 * time.Second,
+			wantErr:           true,
+			expectedErr:       "Failed to connect to",
+			connectionFailure: true,
+		},
+		{
+			name:        "connection timeout",
+			table:       "table_requests_limiter_src_ip",
+			storeType:   "http_req_rate",
+			timeout:     0 * time.Nanosecond,
+			wantErr:     true,
+			expectedErr: "Failed to connect to",
+		},
+		{
+			name:        "empty storeType",
+			table:       "table_requests_limiter_src_ip",
+			timeout:     1 * time.Second,
+			wantErr:     true,
+			expectedErr: "storeType argument",
+		},
+		{
+			name:        "empty table",
+			timeout:     1 * time.Second,
+			storeType:   "http_req_rate",
+			wantErr:     true,
+			expectedErr: "table argument",
+		},
+		{
+			name:        "negative timeout",
+			timeout:     -1 * time.Second,
+			storeType:   "http_req_rate",
+			table:       "table_requests_limiter_src_ip",
+			wantErr:     true,
+			expectedErr: "timeout argument",
+		},
+		{
+			name:           "negative minRequestRate",
+			storeType:      "http_req_rate",
+			table:          "table_requests_limiter_src_ip",
+			minRequestRate: -1,
+			wantErr:        true,
+			expectedErr:    "minRequestRate argument",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Clean up any existing socket
+			os.Remove(socket)
+
+			if tt.connectionFailure {
+				// Create an empty socket file without a listener
+				file, err := os.Create(socket)
+				if err != nil {
+					t.Fatalf("Failed to setup test %v", err)
+				}
+				file.Close()
+			} else {
+				// Setup the test socket
+				listener, err := net.Listen("unix", socket)
+				if err != nil {
+					t.Fatalf("Failed to create Unix domain socket: %v", err)
+				}
+				defer listener.Close()
+				// Start the mock server in a goroutine
+				go func() {
+					conn, err := listener.Accept()
+					if err != nil {
+						return
+					}
+					defer conn.Close()
+
+					// Read the command
+					buf := make([]byte, 1024)
+					n, err := conn.Read(buf)
+					if err != nil {
+						return
+					}
+					expectedInput := fmt.Sprintf("show table %s data.%s gt %d\n", tt.table, tt.storeType, tt.minRequestRate)
+					if string(buf[:n]) != expectedInput {
+						t.Errorf("Expected input %q, got %q", expectedInput, string(buf[:n]))
+					}
+
+					if _, err := conn.Write([]byte(tt.wantResult)); err != nil {
+						return
+					}
+				}()
+			}
+
+			got, err := sendCommand(tt.table, socket, tt.storeType, tt.minRequestRate, tt.timeout)
+			// Check error cases
+			if tt.wantErr != (err != nil) {
+				t.Errorf("errored = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && err != nil && !strings.HasPrefix(err.Error(), tt.expectedErr) {
+				t.Errorf("error message  --%v--, want something which starts with --%v--", err.Error(), tt.expectedErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.wantResult) {
+					t.Errorf("sendCommand() returned %d lines, want %d lines", len(got), len(tt.wantResult))
+					return
+				}
+
+				for i := range got {
+					if got[i] != tt.wantResult[i] {
+						t.Errorf("sendCommand() line %d = %v, want %v", i, got[i], tt.wantResult[i])
+					}
+				}
+			}
+
+		})
+	}
+}
+
 func Test_parse(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                  string
 		input                 string
@@ -136,6 +293,7 @@ func Test_parse(t *testing.T) {
 	}
 }
 func Test_validateHeader(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name              string
 		input             string
