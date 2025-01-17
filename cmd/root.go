@@ -42,7 +42,6 @@ and the metrics directory.`,
 				if os.IsPermission(err) {
 					return fmt.Errorf("No write access to %s", prometheusFile)
 				}
-				return fmt.Errorf("Failed to open file %s for read/write: %v", prometheusFile, err)
 			}
 			p.Close()
 
